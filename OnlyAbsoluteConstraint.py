@@ -130,17 +130,16 @@ def evaluate(generation):
                 vt += sumnwt - 9
 
         # 禁止勤務パターン制約
-        cml = 0
         for n in range(NURSE):
             wline = ""
             for d in range(1, TERM):
                 wline += str(numpy.where(generation[i][n][d] == True)[0][0])
             for p in forbidden_pattern:
                 tml = re.findall(p, wline)
-                cml += len(tml)
+                vfp += len(tml)
 
-        evvalues.append([vpm, vs, vt, cml])
-        indvvsums.append(vpm + int(vs * SKILL_VALUE_WEIGHT) + vt + cml)
+        evvalues.append([vpm, vs, vt, vfp])
+        indvvsums.append(vpm + int(vs * SKILL_VALUE_WEIGHT) + vt + vfp)
         # allnpms.append(npms)
     result = [indvvsums, evvalues]
     return result
