@@ -6,12 +6,14 @@ import itertools
 import time
 
 NGEN = 10  # 世代数
-NPOP = 100  # 個体数
+NPOP = 10  # 個体数
 NURSE = 24  # ナース数
 TERM = 30  # 期間
-STYPE = 4
+STYPE = 5  # 勤務種類数
+LEVELS = 5  # レベル数
 SKILL_VALUE_WEIGHT = 1 / 20
 
+numpy.set_printoptions(threshold=2 * 30 * 24 * 4)
 rng = numpy.random.default_rng()
 
 sklvalues = numpy.array(
@@ -43,8 +45,28 @@ sklvalues = numpy.array(
     ]
 )
 
+# pregenerate
+ini_roster = numpy.full((TERM, NURSE, STYPE), False)
+ini_fix = numpy.full((TERM, NURSE, LEVELS), True)
+status_cur = numpy.full((NPOP, TERM, NURSE, LEVELS), True)
+# 研修10 休み11 日勤11 準夜1 深夜2
+ini_set = numpy.array([*[4] * 10, *[0] * 11, *[1] * 11, *[2] * 1, *[3] * 2])
+n_rand = rng.choice(24, 35)
+d_rand = rng.choice(30, 35)
+lfix = []
+for i in range(35):
+    r = rng.integers(ini_set.size)
+    ini_roster[d_rand[i]][n_rand[i]][ini_set[r]] = True
+    ini_fix[d_rand[i]][n_rand[i]][0] = False
+    ini_set = numpy.delete(ini_set, r)
+    lfix.append([d_rand[i], n_rand[i]])
+status_cur[:] = ini_fix
+nfix = numpy.array(lfix)
 
 gen_cur = numpy.full((NPOP, TERM, NURSE, STYPE), False)
+gen_cur[:] = ini_roster
+print(status_cur[0])
+
 
 index_nurse_origin = numpy.arange(NURSE)
 index_day_origin = numpy.arange(TERM)
@@ -85,7 +107,26 @@ for i in range(NPOP):
         flag = True
         while flag:
             index_nurse_random = rng.permutation(index_nurse_origin)
-            exshift = numpy.full((24, 4), False)
+            exshift = numpy.full((NURSE, STYPE), False)
+
+            exc_nurse_index = numpy.where(d_rand == d)[0]
+            exc_nl_day = numpy.empty(0, dtype=numpy.int64)
+            exc_nl_pnight = numpy.empty(0, dtype=numpy.int64)
+            exc_nl_mnight = numpy.empty(0, dtype=numpy.int64)
+            for eni in exc_nurse_index:
+                if 1 in numpy.where(ini_roster[d][n_rand[eni]] == True)[0]:
+                    exc_nl_day = numpy.append(exc_nl_day, n_rand[eni])
+                elif 2 in numpy.where(ini_roster[d][n_rand[eni]] == True)[0]:
+                    exc_nl_pnight = numpy.append(exc_nl_pnight, n_rand[eni])
+                elif 3 in numpy.where(ini_roster[d][n_rand[eni]] == True)[0]:
+                    exc_nl_mnight = numpy.append(exc_nl_mnight, n_rand[eni])
+                elif 0 in numpy.where(ini_roster[d][n_rand[eni]] == True)[0]:
+                    exshift[n_rand[eni]][0] = True
+                elif 4 in numpy.where(ini_roster[d][n_rand[eni]] == True)[0]:
+                    exshift[n_rand[eni]][4] = True
+                index_nurse_random = numpy.delete(
+                    index_nurse_random, numpy.where(index_nurse_random == n_rand[eni])
+                )
 
             count, limit = 0, 0
             while count < 3:
@@ -95,6 +136,12 @@ for i in range(NPOP):
                     inst_s_night = copy.deepcopy(s_night)
                     remaining_set = set(itertools.chain.from_iterable(inst_s_night))
                     mods = numpy.arange(3)
+                    for enl in exc_nl_pnight:
+                        remaining_set = search(inst_s_night, sklvalues[enl])
+                        mods = numpy.setdiff1d(mods, enl % 3)
+                        temp = numpy.append(temp, enl)
+                        count += 1
+
                 if sklvalues[n] in remaining_set and n % 3 in mods:
                     temp = numpy.append(temp, n)
                     remaining_set = search(inst_s_night, sklvalues[n])
@@ -121,6 +168,11 @@ for i in range(NPOP):
                     inst_s_night = copy.deepcopy(s_night)
                     remaining_set = set(itertools.chain.from_iterable(inst_s_night))
                     mods = numpy.arange(3)
+                    for enl in exc_nl_mnight:
+                        remaining_set = search(inst_s_night, sklvalues[enl])
+                        mods = numpy.setdiff1d(mods, enl % 3)
+                        temp = numpy.append(temp, enl)
+                        count += 1
                 if sklvalues[n] in remaining_set and n % 3 in mods:
                     temp = numpy.append(temp, n)
                     remaining_set = search(inst_s_night, sklvalues[n])
@@ -146,7 +198,12 @@ for i in range(NPOP):
                     temp = numpy.empty(0, dtype=numpy.int64)
                     inst_s_daytime = copy.deepcopy(s_daytime)
                     remaining_set = set(itertools.chain.from_iterable(inst_s_daytime))
-                    lmods = [0, 1, 2] * 3
+                    lmods = numpy.array([0, 1, 2] * 3)
+                    for enl in exc_nl_day:
+                        remaining_set = search(inst_s_daytime, sklvalues[enl])
+                        lmods = numpy.delete(lmods, numpy.where(lmods == enl % 3)[0][0])
+                        temp = numpy.append(temp, enl)
+                        count += 1
                     loops += 1
                 if sklvalues[n] in remaining_set and (n % 3 in lmods or count == 9):
                     temp = numpy.append(temp, n)
@@ -156,7 +213,7 @@ for i in range(NPOP):
                     )
                     count += 1
                     if count != 10:
-                        lmods.remove(n % 3)
+                        lmods = numpy.delete(lmods, numpy.where(lmods == n % 3)[0][0])
                         limit = 0
                     else:
                         for tn in temp:
@@ -183,6 +240,7 @@ for i in range(NPOP):
         )
 
 gtime = time.perf_counter() - gsttime
+print(numpy.sum(numpy.sum(numpy.array(gen_cur[:][:]), axis=0)))
 
 
 # evaluate
@@ -190,7 +248,8 @@ def evaluate(generation):
     evvalues = []
     # allnpms = []
     indvvsums = []
-    forbidden_pattern = ["111111", "333", "21", "23", "203"]
+    forbidden_3pattern = ["111111", "333", "21", "23", "203"]
+    forbidden_2pattern = ["11111", "32", "31", "22", "21", "23", "20"]
 
     for i in range(NPOP):
         npms = []
@@ -199,8 +258,8 @@ def evaluate(generation):
         vt = 0  # 回数違反
         vfp = 0  # 禁止パターン
         for d in range(TERM):
-            mod_nurses = numpy.zeros((3, 3), dtype=numpy.int64)
-            exskl = numpy.zeros(3, dtype=numpy.int64)
+            mod_nurses = numpy.zeros((3, STYPE - 1), dtype=numpy.int64)
+            exskl = numpy.zeros(STYPE - 1, dtype=numpy.int64)
             for n in range(NURSE):
                 for s in range(1, STYPE):
                     mod_nurses[n % 3][s - 1] += generation[i][d][n][s]
@@ -252,7 +311,7 @@ def evaluate(generation):
             wline = ""
             for d in range(1, TERM):
                 wline += str(numpy.where(generation[i][d][n] == True)[0][0])
-            for p in forbidden_pattern:
+            for p in forbidden_3pattern:
                 tml = re.findall(p, wline)
                 vfp += len(tml)
 
@@ -263,10 +322,12 @@ def evaluate(generation):
     return result
 
 
-etime = time.perf_counter() - gsttime - gtime
+# crossover
+# def crossover(generation):
+
 
 out = evaluate(copy.deepcopy(gen_cur))
 print(numpy.array(out[0]))
 # print(numpy.array(out[1]))
 print(numpy.sum(numpy.array(out[1]), axis=0))
-print(gtime, etime)
+print(gtime)
