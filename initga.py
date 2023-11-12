@@ -1,12 +1,33 @@
 import numpy as np
 import configparser
+import itertools as it
 
 
-class LoadProblem:
-    def __init__(self) -> None:
-        pass
+class LoadSetting:
+    def __init__(self, file_path="settings/command.ini") -> None:
+        self.command = configparser.ConfigParser()
+        self.command.optionxform = str
+        self.command.read(file_path)
 
-    def input_desire(self, file_path="problems/desire1.txt"):
+    def input_command(self):
+        return self.command
+
+    def input_skill_values(self):
+        file_path = "settings/skill_values.txt"
+        with open(file_path, "r") as f:
+            skill_values = np.array([int(x) for x in f.readline().split()])
+            return skill_values
+
+    def input_shift_system(self):
+        file_path = "settings/shift_systems.txt"
+        with open(file_path, "r") as f:
+            arr = [[int(x) for x in line.split()] for line in f]
+            shift_system = np.array(arr)
+            return shift_system
+
+    def input_desire(self):
+        p = self.command.getint("COMMAND", "PROBLEM")
+        file_path = f"problems/desire{p}.txt"
         arr = [[0 for j in range(31)] for i in range(25)]
         with open(file_path, "r") as f:
             i = 0
@@ -17,10 +38,12 @@ class LoadProblem:
                 for j in range(len(data)):
                     arr[i][j] = data[j]
                 i += 1
-        arr = np.array(arr)
-        return arr
+        desire = np.array(arr)
+        return desire
 
-    def input_compatibility(self, file_path="problems/compatibility1.txt"):
+    def input_compatibility(self):
+        p = self.command.getint("COMMAND", "PROBLEM")
+        file_path = f"problems/compatibility{p}.txt"
         arr = [[0 for j in range(25)] for i in range(25)]
         with open(file_path, "r") as f:
             i = 0
@@ -33,125 +56,93 @@ class LoadProblem:
                 i += 1
         # convert to symmetric matrix
         arr = np.array(arr)
-        arr = arr + arr.T - np.diag(arr.diagonal())
-        return arr
+        compatibility = arr + arr.T - np.diag(arr.diagonal())
+        return compatibility
 
-
-class LoadSetting:
-    def __init__(self) -> None:
-        pass
-
-    def input_skill_values(self, file_path="settings/skill_values.txt"):
-        with open(file_path, "r") as f:
-            skill_values = np.array([int(x) for x in f.readline().split()])
-            return skill_values
-
-    def input_shift_system(self, file_path="settings/shift_system1.txt"):
-        with open(file_path, "r") as f:
-            shift_system = np.array([int(x) == 2 for x in f.readline().split()])
-            return shift_system
+    def get_skill_set(self):
+        skill_set_night = set()
+        for i in it.combinations(self.input_skill_values(), 3):
+            skill_set_night.add(i)
+        skill_set_day = set()
+        for i in it.combinations(self.input_skill_values(), 10):
+            skill_set_day.add(i)
+        return skill_set_night, skill_set_day
 
 
 class CreateConfig:
     def __init__(self) -> None:
-        self.config = configparser.ConfigParser()
-        self.command = configparser.ConfigParser()
-        self.command.read("settings/command.ini")
-        self.lp = LoadProblem()
         self.ls = LoadSetting()
+        self.command = self.ls.input_command()
 
-    def create_config(self, file_path="configs/config1-1.ini"):
-        PROBLEM_NUMBER = self.command.getint("COMMAND", "PROBLEM")
-        SHIFT_SYSTEM_NUMBER = self.command.getint("COMMAND", "SHIFT_SYSTEM")
-        if PROBLEM_NUMBER == None:
-            PROBLEM_NUMBER = 1
-        elif SHIFT_SYSTEM_NUMBER == None:
-            SHIFT_SYSTEM_NUMBER = 1
-        file_path = f"configs/config{SHIFT_SYSTEM_NUMBER}-{PROBLEM_NUMBER}.ini"
+    def create_config(self):
+        config = configparser.ConfigParser()
+        config.optionxform = str
+        s = self.command.getint("COMMAND", "SHIFT_SYSTEM")
+        p = self.command.getint("COMMAND", "PROBLEM")
+        file_path = f"configs/config{s}-{p}.ini"
 
-        arr_desire = self.lp.input_desire(f"problems/desire{PROBLEM_NUMBER}.txt")
-        arr_compatibility = self.lp.input_compatibility(
-            f"problems/compatibility{PROBLEM_NUMBER}.txt"
-        )
-        arr_skill = self.ls.input_skill_values(f"settings/skill_values.txt")
-        arr_shift = self.ls.input_shift_system(
-            f"settings/shift_system{SHIFT_SYSTEM_NUMBER}.txt"
-        )
+        arr_desire = self.ls.input_desire()
+        arr_compatibility = self.ls.input_compatibility()
+        arr_skill = self.ls.input_skill_values()
+        arr_shift = self.ls.input_shift_system()
 
         for n in range(self.command.getint("COMMAND", "NURSE")):
-            self.config["NURSE" + str(n + 1)] = {
-                "name": "nurse " + str(n + 1),
-                "skill": str(arr_skill[n]),
-                "2nd shift": str(arr_shift[n]),
-                "bad": str(
-                    np.array(
-                        [
-                            i
-                            for i, c in enumerate(arr_compatibility[n + 1])
-                            if c == 1 and i != 0
-                        ]
-                    )
-                ),
-                "normal": str(
-                    np.array(
-                        [
-                            i
-                            for i, c in enumerate(arr_compatibility[n + 1])
-                            if c == 2 and i != 0
-                        ]
-                    )
-                ),
-                "good": str(
-                    np.array(
-                        [
-                            i
-                            for i, c in enumerate(arr_compatibility[n + 1])
-                            if c == 3 and i != 0
-                        ]
-                    )
-                ),
-                "education": str(
-                    np.array(
-                        [
-                            i
-                            for i, c in enumerate(arr_compatibility[n + 1])
-                            if c == 4 and i != 0
-                        ]
-                    )
-                ),
+            config["NURSE" + str(n + 1)] = {
+                "NAME": "nurse " + str(n + 1),
+                "SKILL": str(arr_skill[n]),
+                "2nd SHIFT": str(arr_shift[s][n] == 2),
             }
-            for d in range(self.command.getint("COMMAND", "TERM")):
-                if arr_desire[n + 1][d + 1] >= 10:
-                    self.config.set(
-                        "NURSE" + str(n + 1),
-                        "day " + str(d + 1),
-                        "2_"
-                        + str(
-                            self.command["DESIRE"].get(
-                                str(arr_desire[n + 1][d + 1] - 10)
-                            )
-                        ),
-                    )
-                elif arr_desire[n + 1][d + 1] >= 0:
-                    self.config.set(
-                        "NURSE" + str(n + 1),
-                        "day " + str(d + 1),
-                        "1_"
-                        + str(
-                            self.command["DESIRE"].get(str(arr_desire[n + 1][d + 1]))
-                        ),
-                    )
+            for i in self.command["COMPATIBILITY"]:
+                config.set(
+                    "NURSE" + str(n + 1),
+                    self.command.get("COMPATIBILITY", i),
+                    str(
+                        np.array(
+                            [
+                                j
+                                for j, c in enumerate(arr_compatibility[n + 1])
+                                if c == int(i) and j != 0
+                            ]
+                        )
+                    ),
+                )
+
+            for c in self.command["DESIRE"]:
+                index = np.where(arr_desire[n + 1] == int(c))[0]
+                config.set(
+                    "NURSE" + str(n + 1),
+                    self.command.get("DESIRE", c),
+                    str(index),
+                )
 
         with open(file_path, "w") as config_file:
-            self.config.write(config_file)
+            config.write(config_file)
 
 
 class GenInitSols:
     def __init__(self) -> None:
-        pass
+        self.ls = LoadSetting()
+        self.skill_set_night, self.skill_set_day = self.ls.get_skill_set()
+        print(self.skill_set_night, self.skill_set_day)
+
+    def search_set(self, target_set, value):
+        result = set()
+        for t in target_set:
+            if value in t:
+                l = list(t)
+                l.remove(value)
+                result.add(tuple(l))
+        if not result:
+            pass
+        else:
+            target_set.clear()
+            target_set.update(result)
+        return set(it.chain.from_iterable(result))
 
 
 if __name__ == "__main__":
     np.set_printoptions(linewidth=100)
-#    cc = CreateConfig()
-#    cc.create_config()
+    cc = CreateConfig()
+    cc.create_config()
+
+    gs = GenInitSols()
