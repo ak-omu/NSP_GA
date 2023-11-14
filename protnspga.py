@@ -6,7 +6,7 @@ import itertools
 import time
 
 NGEN = 10  # 世代数
-NPOP = 10  # 個体数
+NPOP = 100  # 個体数
 NURSE = 24  # ナース数
 TERM = 30  # 期間
 STYPE = 5  # 勤務種類数
